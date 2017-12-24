@@ -1,11 +1,13 @@
 var exec = require("child_process").exec;
 var Accessory, Service, Characteristic, UUIDGen;
+var queuedCommands;
 
 module.exports = function (homebridge) {
   Accessory = homebridge.platformAccessory;
   Service = homebridge.hap.Service;
   Characteristic = homebridge.hap.Characteristic;
   UUIDGen = homebridge.hap.uuid;
+  qeueudCommands = new Array();
 
   homebridge.registerPlatform("homebridge-cmdswitch2", "cmdSwitch2", cmdSwitchPlatform, true);
 }
@@ -40,6 +42,14 @@ cmdSwitchPlatform.prototype.didFinishLaunching = function () {
     var accessory = this.accessories[name];
     if (!accessory.reachable) this.removeAccessory(accessory);
   }
+  
+  var self = this;
+  setInterval(function () {
+    if (queuedCommands.length) {		
+      var command = queuedCommands.shift();		
+      self.setPowerState(command['thisSwitch'], command['state'], command['callback']);		
+    }  
+  }, 500);
 }
 
 // Method to add and update HomeKit accessories
@@ -117,7 +127,7 @@ cmdSwitchPlatform.prototype.setService = function (accessory) {
   accessory.getService(Service.Switch)
     .getCharacteristic(Characteristic.On)
     .on('get', this.getPowerState.bind(this, accessory.context))
-    .on('set', this.setPowerState.bind(this, accessory.context));
+    .on('set', this.queuePowerState.bind(this, accessory.context));
 
   accessory.on('identify', this.identify.bind(this, accessory.context));
 }
@@ -191,6 +201,14 @@ cmdSwitchPlatform.prototype.statePolling = function (name) {
   this.polling[name] = setTimeout(this.statePolling.bind(this, name), thisSwitch.interval * 1000);
 }
 
+cmdSwitchPlatform.prototype.queuePowerState = function (thisSwitch, state, callback) {		
+  queuedCommands.push({		
+    'thisSwitch': thisSwitch,		
+    'state': state,		
+    'callback': callback,		
+  });		
+}
+
 // Method to determine current state
 cmdSwitchPlatform.prototype.getPowerState = function (thisSwitch, callback) {
   var self = this;
@@ -245,11 +263,11 @@ cmdSwitchPlatform.prototype.setPowerState = function (thisSwitch, state, callbac
   });
 
   // Allow 1s to set state but otherwise assumes success
-  tout = setTimeout(function () {
-    tout = null;
-    self.log("Turning " + (state ? "on " : "off ") + thisSwitch.name + " took too long [" + thisSwitch.timeout + "s], assuming success." );
+  //tout = setTimeout(function () {
+    //tout = null;
+    self.log("Turning " + (state ? "on " : "off ") + thisSwitch.name + " took too long, assuming success." );
     callback();
-  }, thisSwitch.timeout * 1000);
+  //}, thisSwitch.timeout * 1000);
 }
 
 // Method to handle identify request
